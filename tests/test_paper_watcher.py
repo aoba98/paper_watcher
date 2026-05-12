@@ -286,6 +286,8 @@ def test_mailer_send_uses_smtp_ssl_for_port_465():
         mock_ssl.return_value.__exit__ = MagicMock(return_value=False)
         mailer.send([])
     mock_ssl.assert_called_once()
+    mock_server.login.assert_called_once_with("sender@example.com", "secret")
+    mock_server.sendmail.assert_called_once()
 
 
 def test_mailer_send_uses_starttls_for_port_587():
@@ -296,9 +298,13 @@ def test_mailer_send_uses_starttls_for_port_587():
         mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
         mailer.send([])
     mock_smtp.assert_called_once()
+    mock_server.starttls.assert_called_once()
+    mock_server.login.assert_called_once_with("a@b.com", "pass")
+    mock_server.sendmail.assert_called_once()
 
 
 def test_mailer_zero_results_sends_no_match_email():
+    import email
     mailer = _make_mailer()
     with patch("paper_watcher.smtplib.SMTP_SSL") as mock_ssl:
         mock_server = MagicMock()
@@ -306,5 +312,16 @@ def test_mailer_zero_results_sends_no_match_email():
         mock_ssl.return_value.__exit__ = MagicMock(return_value=False)
         mailer.send([])
     sent_args = mock_server.sendmail.call_args
-    msg_str = sent_args[0][2]
-    assert "今日无匹配论文" in msg_str or "无匹配" in msg_str
+    msg_bytes = sent_args[0][2]
+    msg = email.message_from_bytes(msg_bytes)
+    subject = email.header.decode_header(msg["Subject"])
+    subject_str = "".join(
+        part.decode(enc or "utf-8") if isinstance(part, bytes) else part
+        for part, enc in subject
+    )
+    body_str = ""
+    for part in msg.walk():
+        if part.get_content_type() == "text/plain":
+            body_str = part.get_payload(decode=True).decode("utf-8")
+            break
+    assert "今日无匹配论文" in subject_str or "无匹配" in body_str

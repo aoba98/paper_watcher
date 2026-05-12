@@ -235,7 +235,7 @@ class Mailer:
     def _format_body(self, today: str, papers_with_analysis: list) -> str:
         lines = [f"[Paper Watcher] {today} | 匹配 {len(papers_with_analysis)} 篇论文\n"]
         for i, (paper, analysis) in enumerate(papers_with_analysis, 1):
-            priority = analysis.get("priority", "low").upper()
+            priority = (analysis.get("priority") or "low").upper()
             score = analysis.get("relevance_score", 0)
             sub_dirs = analysis.get("sub_directions") or [analysis.get("main_direction", "")]
             directions = " | ".join(sub_dirs)
@@ -261,18 +261,17 @@ class Mailer:
         msg["From"] = self.sender
         msg["To"] = self.recipient
         msg["Subject"] = subject
-        part = MIMEText("", "plain", "utf-8")
-        part.set_payload(body, charset=None)
-        msg.attach(part)
-        raw = msg.as_string()
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        raw = msg.as_bytes()
         if self.smtp_port == 465:
             ctx = ssl.create_default_context()
             with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ctx) as server:
                 server.login(self.sender, self.password)
                 server.sendmail(self.sender, self.recipient, raw)
         else:
+            ctx = ssl.create_default_context()
             with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
+                server.starttls(context=ctx)
                 server.login(self.sender, self.password)
                 server.sendmail(self.sender, self.recipient, raw)
 
