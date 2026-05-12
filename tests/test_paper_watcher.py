@@ -190,10 +190,23 @@ def test_llm_analyzer_passes_correct_messages():
     analyzer = _make_analyzer_with_mock_client(mock_client)
     paper = _make_paper()
     analyzer.analyze(paper)
-    call_kwargs = mock_client.chat.completions.create.call_args[1]
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
     messages = call_kwargs["messages"]
     assert messages[0]["role"] == "system"
-    assert "video generation" in messages[0]["content"]
+    assert "one_sentence_summary" in messages[0]["content"]
     assert messages[1]["role"] == "user"
     assert paper.title in messages[1]["content"]
     assert paper.abstract in messages[1]["content"]
+
+
+def test_llm_analyzer_returns_none_on_invalid_schema():
+    mock_client = MagicMock()
+    # LLM returns valid JSON but wrong types (score is a string, not int)
+    mock_client.chat.completions.create.return_value.choices[0].message.content = json.dumps({
+        "is_relevant": True,
+        "relevance_score": "9",  # string instead of int
+        "priority": "high",
+    })
+    analyzer = _make_analyzer_with_mock_client(mock_client)
+    result = analyzer.analyze(_make_paper())
+    assert result is None

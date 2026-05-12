@@ -177,6 +177,13 @@ class LLMAnalyzer:
         self.model = model
         self.temperature = temperature
 
+    def _validate(self, data: dict) -> bool:
+        return (
+            isinstance(data.get("relevance_score"), int)
+            and isinstance(data.get("is_relevant"), bool)
+            and data.get("priority") in ("high", "medium", "low")
+        )
+
     def analyze(self, paper: Paper) -> dict | None:
         try:
             response = self.client.chat.completions.create(
@@ -191,7 +198,13 @@ class LLMAnalyzer:
                     )},
                 ],
             )
-            return json.loads(response.choices[0].message.content)
+            result = json.loads(response.choices[0].message.content)
+            if not self._validate(result):
+                logging.error(
+                    "LLM returned invalid schema for %s: %s", paper.arxiv_id, result
+                )
+                return None
+            return result
         except json.JSONDecodeError as e:
             logging.error(f"JSON parse error for {paper.arxiv_id}: {e}")
             return None
