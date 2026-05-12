@@ -84,20 +84,25 @@ class Paper:
 class StateManager:
     def __init__(self, state_file: str = STATE_FILE):
         self.state_file = Path(state_file)
-        self.sent_ids: set = set()
+        self.sent_ids: set[str] = set()
 
     def load(self) -> "StateManager":
         if self.state_file.exists():
-            data = json.loads(self.state_file.read_text())
-            self.sent_ids = set(data)
+            try:
+                data = json.loads(self.state_file.read_text())
+                self.sent_ids = set(data)
+            except (json.JSONDecodeError, TypeError):
+                logging.warning("State file corrupt or unreadable; starting with empty set.")
+                self.sent_ids = set()
         else:
             self.sent_ids = set()
         return self
 
     def save(self):
-        self.state_file.write_text(
-            json.dumps(sorted(self.sent_ids), indent=2)
-        )
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.state_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(sorted(self.sent_ids), indent=2))
+        os.replace(tmp, self.state_file)
 
     def is_new(self, arxiv_id: str) -> bool:
         return arxiv_id not in self.sent_ids
