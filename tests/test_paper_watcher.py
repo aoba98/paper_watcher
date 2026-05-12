@@ -210,3 +210,101 @@ def test_llm_analyzer_returns_none_on_invalid_schema():
     analyzer = _make_analyzer_with_mock_client(mock_client)
     result = analyzer.analyze(_make_paper())
     assert result is None
+
+
+# ── Mailer ────────────────────────────────────────────────────────────────────
+
+def _make_mailer():
+    return Mailer(
+        sender="sender@example.com",
+        password="secret",
+        recipient="recv@example.com",
+        smtp_host="smtp.example.com",
+        smtp_port=465,
+    )
+
+
+def _make_paper_analysis_pair(
+    title="My Paper",
+    authors=None,
+    published="2026-05-11",
+    link="https://arxiv.org/abs/2405.001",
+    priority="high",
+    score=9,
+    sub_directions=None,
+    main_direction="video reward",
+    summary="一句话总结",
+    possible_use="对我的启发",
+):
+    paper = MagicMock(spec=Paper)
+    paper.title = title
+    paper.authors = authors or ["Alice", "Bob", "Carol", "Dave"]
+    paper.published = published
+    paper.link = link
+    analysis = {
+        "priority": priority,
+        "relevance_score": score,
+        "sub_directions": sub_directions or ["DPO"],
+        "main_direction": main_direction,
+        "one_sentence_summary": summary,
+        "possible_use_for_me": possible_use,
+    }
+    return paper, analysis
+
+
+def test_mailer_format_body_contains_key_fields():
+    mailer = _make_mailer()
+    pair = _make_paper_analysis_pair()
+    body = mailer._format_body("2026-05-12", [pair])
+    assert "My Paper" in body
+    assert "HIGH" in body
+    assert "9/10" in body
+    assert "https://arxiv.org/abs/2405.001" in body
+    assert "一句话总结" in body
+    assert "对我的启发" in body
+
+
+def test_mailer_format_body_truncates_long_author_list():
+    mailer = _make_mailer()
+    paper, analysis = _make_paper_analysis_pair(authors=["A", "B", "C", "D"])
+    body = mailer._format_body("2026-05-12", [(paper, analysis)])
+    assert "等" in body
+
+
+def test_mailer_format_body_short_author_list_no_truncation():
+    mailer = _make_mailer()
+    paper, analysis = _make_paper_analysis_pair(authors=["Alice", "Bob"])
+    body = mailer._format_body("2026-05-12", [(paper, analysis)])
+    assert "等" not in body
+
+
+def test_mailer_send_uses_smtp_ssl_for_port_465():
+    mailer = _make_mailer()
+    with patch("paper_watcher.smtplib.SMTP_SSL") as mock_ssl:
+        mock_server = MagicMock()
+        mock_ssl.return_value.__enter__ = MagicMock(return_value=mock_server)
+        mock_ssl.return_value.__exit__ = MagicMock(return_value=False)
+        mailer.send([])
+    mock_ssl.assert_called_once()
+
+
+def test_mailer_send_uses_starttls_for_port_587():
+    mailer = Mailer("a@b.com", "pass", "c@d.com", "smtp.example.com", 587)
+    with patch("paper_watcher.smtplib.SMTP") as mock_smtp:
+        mock_server = MagicMock()
+        mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
+        mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
+        mailer.send([])
+    mock_smtp.assert_called_once()
+
+
+def test_mailer_zero_results_sends_no_match_email():
+    mailer = _make_mailer()
+    with patch("paper_watcher.smtplib.SMTP_SSL") as mock_ssl:
+        mock_server = MagicMock()
+        mock_ssl.return_value.__enter__ = MagicMock(return_value=mock_server)
+        mock_ssl.return_value.__exit__ = MagicMock(return_value=False)
+        mailer.send([])
+    sent_args = mock_server.sendmail.call_args
+    msg_str = sent_args[0][2]
+    assert "今日无匹配论文" in msg_str or "无匹配" in msg_str

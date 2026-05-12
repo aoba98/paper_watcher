@@ -214,7 +214,67 @@ class LLMAnalyzer:
 
 
 class Mailer:
-    pass
+    def __init__(self, sender: str, password: str, recipient: str, smtp_host: str, smtp_port: int):
+        self.sender = sender
+        self.password = password
+        self.recipient = recipient
+        self.smtp_host = smtp_host
+        self.smtp_port = smtp_port
+
+    def send(self, papers_with_analysis: list) -> None:
+        today = date.today().isoformat()
+        count = len(papers_with_analysis)
+        if count == 0:
+            subject = f"[Paper Watcher] {today} | 今日无匹配论文"
+            body = f"今日无匹配论文。从 arXiv 抓取并分析完毕，无符合条件的论文（相关度 >= {MIN_RELEVANCE_SCORE}）。\n"
+        else:
+            subject = f"[Paper Watcher] {today} | 匹配 {count} 篇论文"
+            body = self._format_body(today, papers_with_analysis)
+        self._send_email(subject, body)
+
+    def _format_body(self, today: str, papers_with_analysis: list) -> str:
+        lines = [f"[Paper Watcher] {today} | 匹配 {len(papers_with_analysis)} 篇论文\n"]
+        for i, (paper, analysis) in enumerate(papers_with_analysis, 1):
+            priority = analysis.get("priority", "low").upper()
+            score = analysis.get("relevance_score", 0)
+            sub_dirs = analysis.get("sub_directions") or [analysis.get("main_direction", "")]
+            directions = " | ".join(sub_dirs)
+            author_list = paper.authors[:3]
+            suffix = "等" if len(paper.authors) > 3 else ""
+            authors_str = ", ".join(author_list) + suffix
+            lines += [
+                "━" * 40,
+                f"[{priority}] #{i}  relevance: {score}/10",
+                f"标题: {paper.title}",
+                f"作者: {authors_str}",
+                f"时间: {paper.published}",
+                f"链接: {paper.link}",
+                f"方向: {directions}",
+                f"一句话: {analysis.get('one_sentence_summary', '')}",
+                f"对我的启发: {analysis.get('possible_use_for_me', '')}",
+                "",
+            ]
+        return "\n".join(lines)
+
+    def _send_email(self, subject: str, body: str) -> None:
+        msg = MIMEMultipart()
+        msg["From"] = self.sender
+        msg["To"] = self.recipient
+        msg["Subject"] = subject
+        part = MIMEText("", "plain", "utf-8")
+        part.set_payload(body, charset=None)
+        msg.attach(part)
+        raw = msg.as_string()
+        if self.smtp_port == 465:
+            ctx = ssl.create_default_context()
+            with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, context=ctx) as server:
+                server.login(self.sender, self.password)
+                server.sendmail(self.sender, self.recipient, raw)
+        else:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.sender, self.password)
+                server.sendmail(self.sender, self.recipient, raw)
 
 
 def main():
