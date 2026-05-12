@@ -117,3 +117,83 @@ def test_arxiv_fetcher_fetch_calls_api(tmp_path):
     assert params["max_results"] == 10
     assert len(papers) == 1
     assert papers[0].arxiv_id == "2405.00001"
+
+
+# ── LLMAnalyzer ───────────────────────────────────────────────────────────────
+
+SAMPLE_ANALYSIS = {
+    "is_relevant": True,
+    "relevance_score": 9,
+    "main_direction": "video reward model",
+    "sub_directions": ["DPO", "preference data"],
+    "task": "score video generation quality",
+    "method": "contrastive reward model",
+    "innovation": "first video-specific reward model",
+    "possible_use_for_me": "use as scoring baseline for aesthetic data",
+    "keywords": ["video reward", "RLHF", "DiT"],
+    "priority": "high",
+    "one_sentence_summary": "提出了视频生成奖励模型。",
+}
+
+
+def _make_analyzer_with_mock_client(mock_client):
+    analyzer = LLMAnalyzer.__new__(LLMAnalyzer)
+    analyzer.client = mock_client
+    analyzer.model = "deepseek-chat"
+    analyzer.temperature = 0.2
+    return analyzer
+
+
+def _make_paper(arxiv_id="2405.001"):
+    paper = MagicMock(spec=Paper)
+    paper.title = "Test Paper"
+    paper.abstract = "Test abstract."
+    paper.arxiv_id = arxiv_id
+    return paper
+
+
+def test_llm_analyzer_returns_parsed_dict():
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices[0].message.content = (
+        json.dumps(SAMPLE_ANALYSIS)
+    )
+    analyzer = _make_analyzer_with_mock_client(mock_client)
+    result = analyzer.analyze(_make_paper())
+    assert result["is_relevant"] is True
+    assert result["relevance_score"] == 9
+    assert result["priority"] == "high"
+
+
+def test_llm_analyzer_returns_none_on_api_exception():
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = Exception("network error")
+    analyzer = _make_analyzer_with_mock_client(mock_client)
+    result = analyzer.analyze(_make_paper())
+    assert result is None
+
+
+def test_llm_analyzer_returns_none_on_invalid_json():
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices[0].message.content = (
+        "not valid json {"
+    )
+    analyzer = _make_analyzer_with_mock_client(mock_client)
+    result = analyzer.analyze(_make_paper())
+    assert result is None
+
+
+def test_llm_analyzer_passes_correct_messages():
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices[0].message.content = (
+        json.dumps(SAMPLE_ANALYSIS)
+    )
+    analyzer = _make_analyzer_with_mock_client(mock_client)
+    paper = _make_paper()
+    analyzer.analyze(paper)
+    call_kwargs = mock_client.chat.completions.create.call_args[1]
+    messages = call_kwargs["messages"]
+    assert messages[0]["role"] == "system"
+    assert "video generation" in messages[0]["content"]
+    assert messages[1]["role"] == "user"
+    assert paper.title in messages[1]["content"]
+    assert paper.abstract in messages[1]["content"]

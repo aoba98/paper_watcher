@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -167,7 +169,35 @@ class ArxivFetcher:
 
 
 class LLMAnalyzer:
-    pass
+    def __init__(self, api_key: str, model: str = DEEPSEEK_MODEL, temperature: float = LLM_TEMPERATURE):
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com",
+        )
+        self.model = model
+        self.temperature = temperature
+
+    def analyze(self, paper: Paper) -> dict | None:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=self.temperature,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": USER_TEMPLATE.format(
+                        title=paper.title,
+                        abstract=paper.abstract,
+                    )},
+                ],
+            )
+            return json.loads(response.choices[0].message.content)
+        except json.JSONDecodeError as e:
+            logging.error(f"JSON parse error for {paper.arxiv_id}: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"LLM API error for {paper.arxiv_id}: {e}")
+            return None
 
 
 class Mailer:
