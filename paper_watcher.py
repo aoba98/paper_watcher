@@ -10,6 +10,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
+import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -21,13 +22,13 @@ logging.basicConfig(
 
 ARXIV_QUERY = "cat:cs.CV OR cat:cs.AI OR cat:cs.LG"
 MAX_RESULTS = 100
-MIN_RELEVANCE_SCORE = 7
+MIN_RELEVANCE_SCORE = 7  # papers below this score are dropped before emailing
 DATE_WINDOW_DAYS = 2
 DEEPSEEK_MODEL = "deepseek-chat"
 LLM_TEMPERATURE = 0.2
-STATE_FILE = "sent_ids.json"
+STATE_FILE = str(Path(__file__).parent / "sent_ids.json")
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
-ARXIV_API_URL = "http://export.arxiv.org/api/query"
+ARXIV_API_URL = "https://export.arxiv.org/api/query"
 ARXIV_NS = "{http://www.w3.org/2005/Atom}"
 
 SYSTEM_PROMPT = """\
@@ -45,13 +46,15 @@ Analyze the given paper and return a JSON object with these exact fields:
 - possible_use_for_me (str): specific actionable insight for this researcher
 - keywords (list[str]): 3-6 technical keywords
 - priority (str): "high" / "medium" / "low"
-- one_sentence_summary (str): one-sentence Chinese summary
+- one_sentence_summary (str): one-sentence summary in Simplified Chinese
 
 Priority rules:
 - high: directly addresses video generation post-training, reward models, \
 preference data, or DiT/MMDiT architectures
 - medium: adjacent methods (general RLHF, diffusion theory, multimodal)
-- low: only loosely related"""
+- low: only loosely related
+
+Always write the one_sentence_summary field in Simplified Chinese."""
 
 USER_TEMPLATE = """\
 My research interests:
@@ -73,7 +76,7 @@ class Paper:
     arxiv_id: str
     title: str
     abstract: str
-    authors: list
+    authors: list[str]
     published: str
     link: str
 
