@@ -277,7 +277,58 @@ class Mailer:
 
 
 def main():
-    pass
+    load_dotenv()
+
+    api_key = os.environ["DEEPSEEK_API_KEY"]
+    sender = os.environ["EMAIL_SENDER"]
+    password = os.environ["EMAIL_PASSWORD"]
+    recipient = os.environ["EMAIL_RECIPIENT"]
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", "465"))
+
+    state = StateManager(STATE_FILE).load()
+    fetcher = ArxivFetcher(ARXIV_QUERY, MAX_RESULTS, DATE_WINDOW_DAYS)
+    analyzer = LLMAnalyzer(api_key, DEEPSEEK_MODEL, LLM_TEMPERATURE)
+    mailer = Mailer(sender, password, recipient, smtp_host, smtp_port)
+
+    logging.info("Fetching papers from arXiv...")
+    try:
+        papers = fetcher.fetch(state)
+    except Exception as e:
+        logging.error(f"arXiv fetch failed: {e}")
+        raise
+
+    logging.info(f"Fetched {len(papers)} new papers (after dedup filter)")
+
+    results = []
+    for paper in papers:
+        logging.info(f"Analyzing [{paper.arxiv_id}]: {paper.title[:60]}...")
+        analysis = analyzer.analyze(paper)
+        state.mark_sent(paper.arxiv_id)
+
+        if analysis is None:
+            continue
+        if not analysis.get("is_relevant"):
+            logging.info(f"  → not relevant, skipping")
+            continue
+        score = analysis.get("relevance_score", 0)
+        if score < MIN_RELEVANCE_SCORE:
+            logging.info(f"  → score {score} < {MIN_RELEVANCE_SCORE}, skipping")
+            continue
+        logging.info(f"  → MATCH  score={score}  priority={analysis.get('priority')}")
+        results.append((paper, analysis))
+
+    results.sort(key=lambda x: (
+        PRIORITY_ORDER.get(x[1].get("priority", "low"), 2),
+        -x[1].get("relevance_score", 0),
+    ))
+
+    logging.info(f"Sending email: {len(results)} matched papers")
+    mailer.send(results)
+    logging.info("Email sent successfully")
+
+    state.save()
+    logging.info(f"State saved ({len(state.sent_ids)} total IDs tracked)")
 
 
 if __name__ == "__main__":

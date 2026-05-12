@@ -325,3 +325,57 @@ def test_mailer_zero_results_sends_no_match_email():
             body_str = part.get_payload(decode=True).decode("utf-8")
             break
     assert "今日无匹配论文" in subject_str or "无匹配" in body_str
+
+
+# ── Filtering & Sorting ───────────────────────────────────────────────────────
+
+def _analysis(is_relevant=True, score=8, priority="medium"):
+    return {
+        "is_relevant": is_relevant,
+        "relevance_score": score,
+        "priority": priority,
+        "sub_directions": [],
+        "main_direction": "test",
+        "one_sentence_summary": "",
+        "possible_use_for_me": "",
+    }
+
+
+def test_filter_keeps_relevant_papers_above_threshold():
+    pairs = [
+        (MagicMock(spec=Paper), _analysis(is_relevant=True, score=8)),
+        (MagicMock(spec=Paper), _analysis(is_relevant=True, score=6)),
+        (MagicMock(spec=Paper), _analysis(is_relevant=False, score=9)),
+    ]
+    results = [
+        (p, a) for p, a in pairs
+        if a.get("is_relevant") and a.get("relevance_score", 0) >= MIN_RELEVANCE_SCORE
+    ]
+    assert len(results) == 1
+    assert results[0][1]["relevance_score"] == 8
+
+
+def test_sort_high_priority_before_medium():
+    pairs = [
+        (MagicMock(spec=Paper), _analysis(priority="medium", score=9)),
+        (MagicMock(spec=Paper), _analysis(priority="high", score=7)),
+    ]
+    sorted_pairs = sorted(pairs, key=lambda x: (
+        PRIORITY_ORDER.get(x[1].get("priority", "low"), 2),
+        -x[1].get("relevance_score", 0),
+    ))
+    assert sorted_pairs[0][1]["priority"] == "high"
+
+
+def test_sort_same_priority_higher_score_first():
+    pairs = [
+        (MagicMock(spec=Paper), _analysis(priority="high", score=7)),
+        (MagicMock(spec=Paper), _analysis(priority="high", score=9)),
+        (MagicMock(spec=Paper), _analysis(priority="high", score=8)),
+    ]
+    sorted_pairs = sorted(pairs, key=lambda x: (
+        PRIORITY_ORDER.get(x[1].get("priority", "low"), 2),
+        -x[1].get("relevance_score", 0),
+    ))
+    scores = [p[1]["relevance_score"] for p in sorted_pairs]
+    assert scores == [9, 8, 7]
