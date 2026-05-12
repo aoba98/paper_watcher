@@ -27,7 +27,7 @@ ARXIV_QUERY = "cat:cs.CV OR cat:cs.AI OR cat:cs.LG"
 MAX_RESULTS = 100
 MIN_RELEVANCE_SCORE = 7  # papers below this score are dropped before emailing
 DATE_WINDOW_DAYS = 2
-DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_MODEL = "deepseek-v4-pro"
 LLM_TEMPERATURE = 0.2
 STATE_FILE = str(Path(__file__).parent / "sent_ids.json")
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
@@ -169,13 +169,12 @@ class ArxivFetcher:
 
 
 class LLMAnalyzer:
-    def __init__(self, api_key: str, model: str = DEEPSEEK_MODEL, temperature: float = LLM_TEMPERATURE):
+    def __init__(self, api_key: str, model: str = DEEPSEEK_MODEL):
         self.client = OpenAI(
             api_key=api_key,
             base_url="https://api.deepseek.com",
         )
         self.model = model
-        self.temperature = temperature
 
     def _validate(self, data: dict) -> bool:
         return (
@@ -188,8 +187,8 @@ class LLMAnalyzer:
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
-                temperature=self.temperature,
-                response_format={"type": "json_object"},
+                reasoning_effort="high",
+                extra_body={"thinking": {"type": "enabled"}},
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": USER_TEMPLATE.format(
@@ -298,7 +297,7 @@ def main():
 
     state = StateManager(STATE_FILE).load()
     fetcher = ArxivFetcher(ARXIV_QUERY, MAX_RESULTS, DATE_WINDOW_DAYS)
-    analyzer = LLMAnalyzer(api_key, DEEPSEEK_MODEL, LLM_TEMPERATURE)
+    analyzer = LLMAnalyzer(api_key, DEEPSEEK_MODEL)
     mailer = Mailer(sender, password, recipient, smtp_host, smtp_port)
 
     logging.info("Fetching papers from arXiv...")

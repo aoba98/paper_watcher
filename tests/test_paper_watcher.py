@@ -139,8 +139,7 @@ SAMPLE_ANALYSIS = {
 def _make_analyzer_with_mock_client(mock_client):
     analyzer = LLMAnalyzer.__new__(LLMAnalyzer)
     analyzer.client = mock_client
-    analyzer.model = "deepseek-chat"
-    analyzer.temperature = 0.2
+    analyzer.model = "deepseek-v4-pro"
     return analyzer
 
 
