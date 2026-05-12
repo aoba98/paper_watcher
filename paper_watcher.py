@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import smtplib
 import ssl
 import xml.etree.ElementTree as ET
@@ -133,32 +134,35 @@ class ArxivFetcher:
         root = ET.fromstring(xml_text)
         papers = []
         for entry in root.findall(f"{ARXIV_NS}entry"):
-            raw_id = entry.find(f"{ARXIV_NS}id").text.strip()
-            # normalize: http://arxiv.org/abs/2405.00001v1 -> 2405.00001
-            arxiv_id = raw_id.split("/abs/")[-1].split("v")[0]
+            try:
+                raw_id = entry.find(f"{ARXIV_NS}id").text.strip()
+                arxiv_id = re.sub(r"v\d+$", "", raw_id.split("/abs/")[-1])
 
-            published_str = entry.find(f"{ARXIV_NS}published").text.strip()
-            published_dt = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
+                published_str = entry.find(f"{ARXIV_NS}published").text.strip()
+                published_dt = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
 
-            if published_dt < cutoff:
+                if published_dt < cutoff:
+                    continue
+                if not state.is_new(arxiv_id):
+                    continue
+
+                title = entry.find(f"{ARXIV_NS}title").text.strip().replace("\n", " ")
+                abstract = entry.find(f"{ARXIV_NS}summary").text.strip().replace("\n", " ")
+                authors = [
+                    a.find(f"{ARXIV_NS}name").text.strip()
+                    for a in entry.findall(f"{ARXIV_NS}author")
+                ]
+                papers.append(Paper(
+                    arxiv_id=arxiv_id,
+                    title=title,
+                    abstract=abstract,
+                    authors=authors,
+                    published=published_str[:10],
+                    link=raw_id,
+                ))
+            except (AttributeError, ValueError) as e:
+                logging.warning("Skipping malformed arXiv entry: %s", e)
                 continue
-            if not state.is_new(arxiv_id):
-                continue
-
-            title = entry.find(f"{ARXIV_NS}title").text.strip().replace("\n", " ")
-            abstract = entry.find(f"{ARXIV_NS}summary").text.strip().replace("\n", " ")
-            authors = [
-                a.find(f"{ARXIV_NS}name").text.strip()
-                for a in entry.findall(f"{ARXIV_NS}author")
-            ]
-            papers.append(Paper(
-                arxiv_id=arxiv_id,
-                title=title,
-                abstract=abstract,
-                authors=authors,
-                published=published_str[:10],
-                link=raw_id,
-            ))
         return papers
 
 

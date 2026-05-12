@@ -110,5 +110,10 @@ def test_arxiv_fetcher_fetch_calls_api(tmp_path):
         mock_requests.get.return_value.raise_for_status = MagicMock()
         papers = fetcher.fetch(state)
     mock_requests.get.assert_called_once()
-    call_kwargs = mock_requests.get.call_args
-    assert "submittedDate" in str(call_kwargs)
+    _, call_kwargs = mock_requests.get.call_args
+    params = call_kwargs["params"]
+    assert params["sortBy"] == "submittedDate"
+    assert params["sortOrder"] == "descending"
+    assert params["max_results"] == 10
+    assert len(papers) == 1
+    assert papers[0].arxiv_id == "2405.00001"
