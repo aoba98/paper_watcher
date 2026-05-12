@@ -82,7 +82,28 @@ class Paper:
 
 
 class StateManager:
-    pass
+    def __init__(self, state_file: str = STATE_FILE):
+        self.state_file = Path(state_file)
+        self.sent_ids: set = set()
+
+    def load(self) -> "StateManager":
+        if self.state_file.exists():
+            data = json.loads(self.state_file.read_text())
+            self.sent_ids = set(data)
+        else:
+            self.sent_ids = set()
+        return self
+
+    def save(self):
+        self.state_file.write_text(
+            json.dumps(sorted(self.sent_ids), indent=2)
+        )
+
+    def is_new(self, arxiv_id: str) -> bool:
+        return arxiv_id not in self.sent_ids
+
+    def mark_sent(self, arxiv_id: str):
+        self.sent_ids.add(arxiv_id)
 
 
 class ArxivFetcher:
