@@ -112,7 +112,54 @@ class StateManager:
 
 
 class ArxivFetcher:
-    pass
+    def __init__(self, query: str, max_results: int, date_window_days: int = DATE_WINDOW_DAYS):
+        self.query = query
+        self.max_results = max_results
+        self.date_window_days = date_window_days
+
+    def fetch(self, state: StateManager) -> list:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self.date_window_days)
+        params = {
+            "search_query": self.query,
+            "max_results": self.max_results,
+            "sortBy": "submittedDate",
+            "sortOrder": "descending",
+        }
+        response = requests.get(ARXIV_API_URL, params=params, timeout=30)
+        response.raise_for_status()
+        return self._parse(response.text, state, cutoff)
+
+    def _parse(self, xml_text: str, state: StateManager, cutoff: datetime) -> list:
+        root = ET.fromstring(xml_text)
+        papers = []
+        for entry in root.findall(f"{ARXIV_NS}entry"):
+            raw_id = entry.find(f"{ARXIV_NS}id").text.strip()
+            # normalize: http://arxiv.org/abs/2405.00001v1 -> 2405.00001
+            arxiv_id = raw_id.split("/abs/")[-1].split("v")[0]
+
+            published_str = entry.find(f"{ARXIV_NS}published").text.strip()
+            published_dt = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
+
+            if published_dt < cutoff:
+                continue
+            if not state.is_new(arxiv_id):
+                continue
+
+            title = entry.find(f"{ARXIV_NS}title").text.strip().replace("\n", " ")
+            abstract = entry.find(f"{ARXIV_NS}summary").text.strip().replace("\n", " ")
+            authors = [
+                a.find(f"{ARXIV_NS}name").text.strip()
+                for a in entry.findall(f"{ARXIV_NS}author")
+            ]
+            papers.append(Paper(
+                arxiv_id=arxiv_id,
+                title=title,
+                abstract=abstract,
+                authors=authors,
+                published=published_str[:10],
+                link=raw_id,
+            ))
+        return papers
 
 
 class LLMAnalyzer:
