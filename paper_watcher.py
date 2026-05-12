@@ -279,12 +279,22 @@ class Mailer:
 def main():
     load_dotenv()
 
+    required_vars = ("DEEPSEEK_API_KEY", "EMAIL_SENDER", "EMAIL_PASSWORD", "EMAIL_RECIPIENT")
+    missing = [k for k in required_vars if not os.environ.get(k)]
+    if missing:
+        logging.error("Missing required environment variables: %s", missing)
+        raise SystemExit(1)
+
     api_key = os.environ["DEEPSEEK_API_KEY"]
     sender = os.environ["EMAIL_SENDER"]
     password = os.environ["EMAIL_PASSWORD"]
     recipient = os.environ["EMAIL_RECIPIENT"]
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", "465"))
+    try:
+        smtp_port = int(os.environ.get("SMTP_PORT", "465"))
+    except ValueError:
+        logging.error("SMTP_PORT must be an integer; got %r", os.environ.get("SMTP_PORT"))
+        raise SystemExit(1)
 
     state = StateManager(STATE_FILE).load()
     fetcher = ArxivFetcher(ARXIV_QUERY, MAX_RESULTS, DATE_WINDOW_DAYS)
@@ -324,11 +334,12 @@ def main():
     ))
 
     logging.info(f"Sending email: {len(results)} matched papers")
-    mailer.send(results)
-    logging.info("Email sent successfully")
-
-    state.save()
-    logging.info(f"State saved ({len(state.sent_ids)} total IDs tracked)")
+    try:
+        mailer.send(results)
+        logging.info("Email sent successfully")
+    finally:
+        state.save()
+        logging.info(f"State saved ({len(state.sent_ids)} total IDs tracked)")
 
 
 if __name__ == "__main__":
