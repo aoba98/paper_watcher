@@ -9,6 +9,7 @@ from paper_watcher import (
     LLMAnalyzer,
     Mailer,
     Paper,
+    DEEPSEEK_MODEL,
     PRIORITY_ORDER,
     MIN_RELEVANCE_SCORE,
 )
@@ -136,10 +137,14 @@ SAMPLE_ANALYSIS = {
 }
 
 
+def test_llm_analyzer_defaults_to_deepseek_v4_flash():
+    assert DEEPSEEK_MODEL == "deepseek-v4-flash"
+
+
 def _make_analyzer_with_mock_client(mock_client):
     analyzer = LLMAnalyzer.__new__(LLMAnalyzer)
     analyzer.client = mock_client
-    analyzer.model = "deepseek-v4-pro"
+    analyzer.model = DEEPSEEK_MODEL
     return analyzer
 
 
@@ -191,6 +196,7 @@ def test_llm_analyzer_passes_correct_messages():
     analyzer.analyze(paper)
     call_kwargs = mock_client.chat.completions.create.call_args.kwargs
     messages = call_kwargs["messages"]
+    assert call_kwargs["model"] == "deepseek-v4-flash"
     assert messages[0]["role"] == "system"
     assert "one_sentence_summary" in messages[0]["content"]
     assert messages[1]["role"] == "user"

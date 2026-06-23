@@ -67,7 +67,7 @@ Key constants at the top of `paper_watcher.py`:
 | `MAX_RESULTS` | `100` | Max papers to fetch per run |
 | `MIN_RELEVANCE_SCORE` | `7` | Minimum score to include in email |
 | `DATE_WINDOW_DAYS` | `2` | How many days back to look |
-| `DEEPSEEK_MODEL` | `deepseek-chat` | DeepSeek model to use |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | DeepSeek model to use |
 
 ## Running Tests
 
