@@ -1,5 +1,6 @@
 import json
 import pytest
+import requests
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -116,6 +117,31 @@ def test_arxiv_fetcher_fetch_calls_api(tmp_path):
     assert params["sortBy"] == "submittedDate"
     assert params["sortOrder"] == "descending"
     assert params["max_results"] == 10
+    assert len(papers) == 1
+    assert papers[0].arxiv_id == "2405.00001"
+
+
+def test_arxiv_fetcher_fetch_retries_rate_limit_response(tmp_path):
+    state = StateManager(str(tmp_path / "sent_ids.json")).load()
+    fetcher = ArxivFetcher("cat:cs.CV", max_results=10, date_window_days=365)
+    rate_limited = MagicMock()
+    rate_limited.status_code = 429
+    rate_limited.headers = {}
+    rate_limited.raise_for_status.side_effect = requests.HTTPError(
+        "429 Client Error", response=rate_limited
+    )
+    success = MagicMock()
+    success.text = SAMPLE_ATOM
+    success.raise_for_status = MagicMock()
+
+    with (
+        patch("paper_watcher.requests.get", side_effect=[rate_limited, success]) as mock_get,
+        patch("time.sleep") as mock_sleep,
+    ):
+        papers = fetcher.fetch(state)
+
+    assert mock_get.call_count == 2
+    mock_sleep.assert_called_once()
     assert len(papers) == 1
     assert papers[0].arxiv_id == "2405.00001"
 

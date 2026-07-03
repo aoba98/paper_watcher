@@ -6,6 +6,7 @@ import os
 import re
 import smtplib
 import ssl
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -33,6 +34,11 @@ STATE_FILE = str(Path(__file__).parent / "sent_ids.json")
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 ARXIV_API_URL = "https://export.arxiv.org/api/query"
 ARXIV_NS = "{http://www.w3.org/2005/Atom}"
+ARXIV_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+ARXIV_MAX_RETRIES = 3
+ARXIV_RETRY_BACKOFF_SECONDS = 10
+ARXIV_MAX_RETRY_DELAY_SECONDS = 300
+ARXIV_REQUEST_HEADERS = {"User-Agent": "paper-watcher/1.0"}
 
 SYSTEM_PROMPT = """\
 You are a research paper relevance analyzer for an AI researcher \
@@ -128,9 +134,42 @@ class ArxivFetcher:
             "sortBy": "submittedDate",
             "sortOrder": "descending",
         }
-        response = requests.get(ARXIV_API_URL, params=params, timeout=30)
-        response.raise_for_status()
-        return self._parse(response.text, state, cutoff)
+        for attempt in range(ARXIV_MAX_RETRIES + 1):
+            response = requests.get(
+                ARXIV_API_URL,
+                params=params,
+                timeout=30,
+                headers=ARXIV_REQUEST_HEADERS,
+            )
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as e:
+                error_response = e.response if e.response is not None else response
+                status_code = getattr(error_response, "status_code", None)
+                if status_code not in ARXIV_RETRY_STATUS_CODES or attempt >= ARXIV_MAX_RETRIES:
+                    raise
+
+                headers = getattr(error_response, "headers", {}) or {}
+                retry_after = headers.get("Retry-After")
+                wait_seconds = ARXIV_RETRY_BACKOFF_SECONDS * (2 ** attempt)
+                if retry_after:
+                    try:
+                        wait_seconds = float(retry_after)
+                    except ValueError:
+                        pass
+                wait_seconds = min(max(wait_seconds, 0), ARXIV_MAX_RETRY_DELAY_SECONDS)
+                logging.warning(
+                    "arXiv returned HTTP %s; retrying in %.1f seconds (%s/%s)",
+                    status_code,
+                    wait_seconds,
+                    attempt + 1,
+                    ARXIV_MAX_RETRIES,
+                )
+                time.sleep(wait_seconds)
+                continue
+            return self._parse(response.text, state, cutoff)
+
+        raise RuntimeError("unreachable arXiv retry state")
 
     def _parse(self, xml_text: str, state: StateManager, cutoff: datetime) -> list:
         root = ET.fromstring(xml_text)
